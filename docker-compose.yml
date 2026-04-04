@@ -9,6 +9,26 @@ services:
       POSTGRES_DB: shipquery
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shipquery"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "3000:3001"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://shipquery:shipquery123@db:5432/shipquery
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
 
 volumes:
   pgdata:
+  uploads:

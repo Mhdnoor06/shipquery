@@ -1,0 +1,9 @@
+node_modules
+.env
+.git
+.gitignore
+uploads
+*.pdf
+*.PDF
+CLAUDE.md
+CLAUDE-DEVOPS.md
