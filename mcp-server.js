@@ -1,8 +1,8 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
-const { searchChunks, searchByCustomer, searchByMBL, listDocuments } = require('./db');
-const { embed } = require('./embedder');
+const { searchChunks, searchByCustomer, searchByMBL, listDocuments } = require('./src/services/documents');
+const { embed } = require('./src/services/embedder');
 
 const server = new McpServer({
   name: 'shipquery',

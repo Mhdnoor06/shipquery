@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { pool } = require('./db');
+const { pool } = require('../config/database');
 require('dotenv').config();
 
 let sheetsClient = null;

@@ -1,6 +1,5 @@
 let embedder = null;
 
-// Load the model once, reuse it for all requests
 async function getEmbedder() {
   if (!embedder) {
     const { pipeline } = await import('@xenova/transformers');
