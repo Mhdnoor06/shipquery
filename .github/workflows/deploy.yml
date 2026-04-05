@@ -1,0 +1,25 @@
+name: Deploy ShipQuery
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Oracle Cloud
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd shipquery
+            git pull origin main
+            docker compose up --build -d
+            docker image prune -f
