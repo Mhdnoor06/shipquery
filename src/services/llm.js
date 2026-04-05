@@ -30,9 +30,10 @@ function toolsToOpenAI(tools) {
   }));
 }
 
-async function chatWithToolsOpenRouter(client, label, systemPrompt, question, tools, executeTool) {
+async function chatWithToolsOpenRouter(client, label, systemPrompt, question, tools, executeTool, history) {
   const messages = [
     { role: 'system', content: systemPrompt },
+    ...(history || []),
     { role: 'user', content: question }
   ];
   let totalCost = 0;
@@ -74,7 +75,7 @@ async function chatWithToolsOpenRouter(client, label, systemPrompt, question, to
 
 // ========== MISTRAL CHAT ==========
 
-async function chatWithToolsMistral(client, label, systemPrompt, question, tools, executeTool) {
+async function chatWithToolsMistral(client, label, systemPrompt, question, tools, executeTool, history) {
   const mistralTools = tools.map(t => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.input_schema }
@@ -82,6 +83,7 @@ async function chatWithToolsMistral(client, label, systemPrompt, question, tools
 
   const messages = [
     { role: 'system', content: systemPrompt },
+    ...(history || []),
     { role: 'user', content: question }
   ];
   let totalCost = 0;
@@ -122,17 +124,17 @@ async function chatWithToolsMistral(client, label, systemPrompt, question, tools
 // ========== MAIN: TRY ALL 4 KEYS IN ORDER ==========
 
 const CHAT_PROVIDERS = [
-  { name: 'openrouter-1', fn: (sp, q, t, e) => chatWithToolsOpenRouter(openrouter1, 'openrouter-1', sp, q, t, e) },
-  { name: 'mistral-1',    fn: (sp, q, t, e) => chatWithToolsMistral(mistral1, 'mistral-1', sp, q, t, e) },
-  { name: 'openrouter-2', fn: (sp, q, t, e) => chatWithToolsOpenRouter(openrouter2, 'openrouter-2', sp, q, t, e) },
-  { name: 'mistral-2',    fn: (sp, q, t, e) => chatWithToolsMistral(mistral2, 'mistral-2', sp, q, t, e) },
+  { name: 'openrouter-1', fn: (sp, q, t, e, h) => chatWithToolsOpenRouter(openrouter1, 'openrouter-1', sp, q, t, e, h) },
+  { name: 'mistral-1',    fn: (sp, q, t, e, h) => chatWithToolsMistral(mistral1, 'mistral-1', sp, q, t, e, h) },
+  { name: 'openrouter-2', fn: (sp, q, t, e, h) => chatWithToolsOpenRouter(openrouter2, 'openrouter-2', sp, q, t, e, h) },
+  { name: 'mistral-2',    fn: (sp, q, t, e, h) => chatWithToolsMistral(mistral2, 'mistral-2', sp, q, t, e, h) },
 ];
 
-async function chatWithTools(systemPrompt, question, tools, executeTool) {
+async function chatWithTools(systemPrompt, question, tools, executeTool, history) {
   for (const provider of CHAT_PROVIDERS) {
     try {
       console.log(`[LLM] Trying ${provider.name}...`);
-      return await provider.fn(systemPrompt, question, tools, executeTool);
+      return await provider.fn(systemPrompt, question, tools, executeTool, history);
     } catch (error) {
       console.error(`[LLM] ${provider.name} failed: ${error.message}`);
     }

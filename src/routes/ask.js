@@ -5,10 +5,10 @@ const { tools, SYSTEM_PROMPT } = require('../tools/definitions');
 const { executeTool } = require('../tools/executor');
 
 router.post('/', async (req, res) => {
-  const { question } = req.body;
+  const { question, history } = req.body;
 
   try {
-    const result = await chatWithTools(SYSTEM_PROMPT, question, tools, executeTool);
+    const result = await chatWithTools(SYSTEM_PROMPT, question, tools, executeTool, history);
 
     console.log(`[${result.provider}] Total cost: $${result.cost.toFixed(4)}`);
 
