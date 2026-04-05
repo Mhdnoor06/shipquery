@@ -4,7 +4,7 @@ const router = express.Router();
 const { parseDocument } = require('../services/parser');
 const { chunkText } = require('../services/chunker');
 const { embed } = require('../services/embedder');
-const { saveDocument, saveChunk } = require('../services/documents');
+const { documentExists, saveDocument, saveChunk } = require('../services/documents');
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -14,6 +14,12 @@ router.post('/', upload.single('document'), async (req, res) => {
   }
 
   try {
+    if (await documentExists(req.file.originalname)) {
+      console.log(`[Upload] Rejected duplicate: ${req.file.originalname}`);
+      return res.status(409).json({ error: `"${req.file.originalname}" is already uploaded.` });
+    }
+
+    console.log(`[Upload] Processing: ${req.file.originalname}`);
     const result = await parseDocument(req.file.path, req.file.originalname);
 
     const docId = await saveDocument(
@@ -23,12 +29,14 @@ router.post('/', upload.single('document'), async (req, res) => {
     );
 
     const chunks = chunkText(result.text, 500, 50);
+    console.log(`[Upload] Embedding ${chunks.length} chunks...`);
 
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await embed(chunks[i]);
       await saveChunk(docId, i, chunks[i], embedding);
     }
 
+    console.log(`[Upload] Done: ${result.metadata.fileName} → ${chunks.length} chunks stored`);
     res.json({
       message: 'Document processed and stored',
       documentId: docId,

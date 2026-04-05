@@ -1,5 +1,13 @@
 const { pool } = require('../config/database');
 
+async function documentExists(fileName) {
+  const result = await pool.query(
+    'SELECT id FROM documents WHERE file_name = $1',
+    [fileName]
+  );
+  return result.rows.length > 0;
+}
+
 async function saveDocument(fileName, fileType, pages) {
   const result = await pool.query(
     'INSERT INTO documents (file_name, file_type, pages) VALUES ($1, $2, $3) RETURNING id',
@@ -64,4 +72,4 @@ async function listDocuments() {
   return result.rows;
 }
 
-module.exports = { saveDocument, saveChunk, searchChunks, searchByCustomer, searchByMBL, listDocuments };
+module.exports = { documentExists, saveDocument, saveChunk, searchChunks, searchByCustomer, searchByMBL, listDocuments };
