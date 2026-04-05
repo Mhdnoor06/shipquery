@@ -7,7 +7,22 @@ const { chunkText } = require('./chunker');
 const { embed } = require('./embedder');
 const { pool, saveDocument, saveChunk, searchChunks, searchByCustomer, searchByMBL, listDocuments } = require('./db');
 const { chatWithTools } = require('./llm');
+const promClient = require('prom-client');
 require('dotenv').config();
+
+// Prometheus metrics
+promClient.collectDefaultMetrics();
+const httpRequestCount = new promClient.Counter({
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests',
+  labelNames: ['method', 'route', 'status']
+});
+const httpRequestDuration = new promClient.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route'],
+  buckets: [0.1, 0.5, 1, 2, 5, 10]
+});
 
 // multer saves uploaded files to "uploads" folder
 const upload = multer({ dest: 'uploads/' });
@@ -16,6 +31,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Track request metrics
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    const route = req.route ? req.route.path : req.path;
+    httpRequestCount.inc({ method: req.method, route, status: res.statusCode });
+    httpRequestDuration.observe({ method: req.method, route }, duration);
+  });
+  next();
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', promClient.register.contentType);
+  res.end(await promClient.register.metrics());
+});
 
 // Health check — monitors app + database status
 app.get('/health', async (req, res) => {
