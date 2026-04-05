@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
+const { Mistral } = require('@mistralai/mistralai');
 require('dotenv').config();
 
 // Initialize clients
@@ -10,6 +11,7 @@ const openrouter = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
   apiKey: process.env.OPENROUTER_API_KEY
 });
+const mistral = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
 
 const OPENROUTER_MODEL = 'qwen/qwen3.6-plus:free';
 
@@ -21,6 +23,7 @@ const PROVIDER_ORDER = (process.env.PRIMARY_LLM || 'openrouter,gemini,claude').s
 function calculateCost(provider, inputTokens, outputTokens) {
   const rates = {
     openrouter: { input: 0, output: 0 },           // free tier
+    mistral: { input: 0.10, output: 0.30 },        // per million tokens (free tier available)
     gemini: { input: 0.10, output: 0.40 },          // per million tokens
     claude: { input: 3.00, output: 15.00 }           // per million tokens
   };
@@ -55,9 +58,10 @@ async function chatWithToolsOpenRouter(systemPrompt, question, tools, executeToo
     tools: toolsToOpenAI(tools)
   });
 
+  if (!response.choices?.[0]) throw new Error('OpenRouter returned empty response');
   totalCost += calculateCost('openrouter', response.usage?.prompt_tokens || 0, response.usage?.completion_tokens || 0);
 
-  // Tool calling loop
+  // Tool calling loop — handles multiple parallel tool calls
   while (response.choices[0]?.message?.tool_calls?.length > 0) {
     const assistantMsg = response.choices[0].message;
     messages.push(assistantMsg);
@@ -71,7 +75,7 @@ async function chatWithToolsOpenRouter(systemPrompt, question, tools, executeToo
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
-        content: toolResult
+        content: toolResult || 'No results found.'
       });
     }
 
@@ -81,6 +85,7 @@ async function chatWithToolsOpenRouter(systemPrompt, question, tools, executeToo
       tools: toolsToOpenAI(tools)
     });
 
+    if (!response.choices?.[0]) throw new Error('OpenRouter returned empty response after tool call');
     totalCost += calculateCost('openrouter', response.usage?.prompt_tokens || 0, response.usage?.completion_tokens || 0);
   }
 
@@ -182,10 +187,66 @@ async function chatWithToolsClaude(systemPrompt, question, tools, executeTool) {
   return { answer: textBlock?.text || 'No answer generated.', cost: totalCost, provider: 'claude' };
 }
 
+// ========== MISTRAL CHAT ==========
+
+async function chatWithToolsMistral(systemPrompt, question, tools, executeTool) {
+  const mistralTools = tools.map(t => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.input_schema }
+  }));
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: question }
+  ];
+  let totalCost = 0;
+
+  let response = await mistral.chat.complete({
+    model: 'mistral-small-latest',
+    messages,
+    tools: mistralTools
+  });
+
+  totalCost += calculateCost('mistral', response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
+
+  while (response.choices[0]?.message?.toolCalls?.length > 0) {
+    const assistantMsg = response.choices[0].message;
+    messages.push({ role: 'assistant', content: '', toolCalls: assistantMsg.toolCalls });
+
+    for (const toolCall of assistantMsg.toolCalls) {
+      console.log(`[Mistral] Tool called: ${toolCall.function.name}(${toolCall.function.arguments})`);
+
+      const args = JSON.parse(toolCall.function.arguments);
+      const toolResult = await executeTool(toolCall.function.name, args);
+
+      messages.push({
+        role: 'tool',
+        name: toolCall.function.name,
+        content: toolResult || 'No results found.',
+        toolCallId: toolCall.id
+      });
+    }
+
+    response = await mistral.chat.complete({
+      model: 'mistral-small-latest',
+      messages,
+      tools: mistralTools
+    });
+
+    totalCost += calculateCost('mistral', response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
+  }
+
+  const answer = response.choices[0]?.message?.content || 'No answer generated.';
+  console.log(`[Cost] Mistral total: $${totalCost.toFixed(4)}`);
+
+  return { answer, cost: totalCost, provider: 'mistral' };
+}
+
 // ========== MAIN: TRY PROVIDERS IN ORDER ==========
 
 const providers = {
   openrouter: chatWithToolsOpenRouter,
+  mistral: chatWithToolsMistral,
   gemini: chatWithToolsGemini,
   claude: chatWithToolsClaude
 };
@@ -247,14 +308,29 @@ async function ocrWithClaude(fileBuffer) {
   return response.content[0].text;
 }
 
+async function ocrWithMistral(fileBuffer) {
+  const base64 = fileBuffer.toString('base64');
+  const result = await mistral.ocr.process({
+    model: 'mistral-ocr-latest',
+    document: { type: 'document_url', documentUrl: `data:application/pdf;base64,${base64}` }
+  });
+  const text = result.pages.map(p => p.markdown).join('\n\n');
+  console.log(`[OCR] Mistral: ${result.pages.length} pages, ${text.length} chars`);
+  return text;
+}
+
+// OCR provider order: Mistral first (free, best for documents), then fallbacks
 const ocrProviders = {
-  openrouter: ocrWithOpenRouter,
+  mistral: ocrWithMistral,
   gemini: ocrWithGemini,
+  openrouter: ocrWithOpenRouter,
   claude: ocrWithClaude
 };
 
+const OCR_ORDER = ['mistral', 'gemini', 'openrouter', 'claude'];
+
 async function ocr(fileBuffer) {
-  for (const name of PROVIDER_ORDER) {
+  for (const name of OCR_ORDER) {
     try {
       console.log(`[OCR] Trying ${name}...`);
       return await ocrProviders[name](fileBuffer);
