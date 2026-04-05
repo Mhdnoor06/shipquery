@@ -31,15 +31,33 @@ jobs:
     needs: build-and-push
 
     steps:
-      - name: Deploy to Oracle Cloud
+      - name: Write .env and deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: OPENROUTER_API_KEY,OPENROUTER_API_KEY_2,MISTRAL_API_KEY,MISTRAL_API_KEY_2,GOOGLE_CREDENTIALS
           script: |
+            cat <<ENVEOF > ~/shipquery/.env
+            DATABASE_URL=postgresql://shipquery:shipquery123@localhost:5432/shipquery
+            PORT=3001
+            OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+            OPENROUTER_API_KEY_2=${OPENROUTER_API_KEY_2}
+            MISTRAL_API_KEY=${MISTRAL_API_KEY}
+            MISTRAL_API_KEY_2=${MISTRAL_API_KEY_2}
+            GOOGLE_CREDENTIALS=${GOOGLE_CREDENTIALS}
+            ENVEOF
+
             cd shipquery
             git pull origin main
+
+            # Run migrations inside app container
             docker compose pull app
+            docker compose up -d db
+            sleep 5
+            docker compose run --rm -e DATABASE_URL=postgresql://shipquery:shipquery123@db:5432/shipquery app npm run migrate
+
+            # Deploy app
             docker compose up -d
             docker image prune -f
