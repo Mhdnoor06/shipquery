@@ -4,3 +4,4 @@ uploads/
 *.pdf
 *.PDF
 imgs/
+google-credentials.json
