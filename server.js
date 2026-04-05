@@ -5,7 +5,7 @@ const cors = require('cors');
 const { parseDocument } = require('./parser');
 const { chunkText } = require('./chunker');
 const { embed } = require('./embedder');
-const { saveDocument, saveChunk, searchChunks, searchByCustomer, searchByMBL, listDocuments } = require('./db');
+const { pool, saveDocument, saveChunk, searchChunks, searchByCustomer, searchByMBL, listDocuments } = require('./db');
 const { chatWithTools } = require('./llm');
 require('dotenv').config();
 
@@ -16,6 +16,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Health check — monitors app + database status
+app.get('/health', async (req, res) => {
+  try {
+    const dbResult = await pool.query('SELECT NOW()');
+    res.json({
+      status: 'healthy',
+      uptime: process.uptime(),
+      database: 'connected',
+      timestamp: dbResult.rows[0].now
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      database: 'disconnected',
+      error: error.message
+    });
+  }
+});
 
 // Tool definitions — the "menu" of actions the LLM can take
 const tools = [
