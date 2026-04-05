@@ -1,6 +1,6 @@
 const { embed } = require('../services/embedder');
 const { searchChunks, searchByCustomer, searchByMBL, listDocuments } = require('../services/documents');
-const { searchSheetByCustomer, searchSheetByMBL, searchSheetByStatus, getAllShipments, formatRows } = require('../services/sheets');
+const { searchSheetByCustomer, searchSheetByMBL, searchSheetByStatus, getAllShipments, formatRows, updateSheetRow, addSheetRow } = require('../services/sheets');
 
 async function executeTool(toolName, toolInput) {
   switch (toolName) {
@@ -39,6 +39,12 @@ async function executeTool(toolName, toolInput) {
     case 'list_all_shipments': {
       const rows = await getAllShipments();
       return '[Live Tracker]\n' + formatRows(rows);
+    }
+    case 'update_shipment': {
+      return await updateSheetRow(toolInput.search_column, toolInput.search_value, toolInput.updates);
+    }
+    case 'add_shipment': {
+      return await addSheetRow(toolInput.data);
     }
   }
 }

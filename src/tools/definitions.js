@@ -80,6 +80,36 @@ const tools = [
       type: 'object',
       properties: {}
     }
+  },
+  {
+    name: 'update_shipment',
+    description: 'Update one or more fields in the live shipment tracker. Use when the user wants to change shipment data. Each value should go in its correct column — never combine values (e.g. put "30000" in Freight Cost and "SAR" in Currency as separate updates, not "30000 SAR" in one field).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        search_column: { type: 'string', description: 'The column to search in to find the row (e.g. "MBL Number", "Job Ref")' },
+        search_value: { type: 'string', description: 'The value to match in the search column' },
+        updates: {
+          type: 'object',
+          description: 'Key-value pairs of columns to update. Keys must match exact column names. Example: {"Status": "Delivered", "Notes": "Cleared customs"}'
+        }
+      },
+      required: ['search_column', 'search_value', 'updates']
+    }
+  },
+  {
+    name: 'add_shipment',
+    description: 'Add a new shipment row to the live tracker. Use when the user wants to log a new shipment. Ask for at least: Job Ref, Customer, MBL Number, and Status.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'object',
+          description: 'Key-value pairs matching sheet columns. Available columns: Job Ref, Date, Customer, Shipper, MBL Number, Carrier, Origin, Destination, Pieces, Weight (KG), Freight Cost, Currency, Status, Notes'
+        }
+      },
+      required: ['data']
+    }
   }
 ];
 
@@ -88,8 +118,14 @@ You help employees find information about shipments, customers, invoices, and ca
 You have access to two data sources:
 1. Uploaded documents (PDFs — invoices, AWBs, packing lists) stored in the database
 2. A live shipment tracker (Google Sheet) with real-time shipment status and details
-Use the appropriate tools to look up information before answering.
-For shipment status, tracking, and live data — use the shipment tracker tools.
+
+You can both READ and WRITE to the live tracker:
+- Search, filter, and summarize shipment data
+- Update existing shipment fields (status, costs, notes, etc.)
+- Add new shipment entries
+
+When updating data, always confirm what you changed and show the updated values.
+When adding a shipment, ask for missing required fields before adding.
 For document-specific details (invoice amounts, packing details) — use the document search tools.
 Always mention whether your data came from uploaded documents or the live tracker.
 If no relevant data is found, say so clearly.

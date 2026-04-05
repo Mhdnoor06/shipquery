@@ -12,13 +12,13 @@ async function getSheets() {
       const creds = JSON.parse(Buffer.from(process.env.GOOGLE_CREDENTIALS, 'base64').toString());
       auth = new google.auth.GoogleAuth({
         credentials: creds,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
       });
     } else {
       // Local: credentials from file
       auth = new google.auth.GoogleAuth({
         keyFile: './google-credentials.json',
-        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
       });
     }
     sheetsClient = google.sheets({ version: 'v4', auth });
@@ -157,8 +157,87 @@ async function previewSheet(sheetId) {
   return { rows: rows.slice(0, 5), total: rows.length };
 }
 
+// ===== Write Functions =====
+
+// Update one or more fields in a row matched by a search value
+async function updateSheetRow(searchColumn, searchValue, updates) {
+  const sheets = await getSheets();
+  const connectedSheets = await getConnectedSheets();
+
+  for (const entry of connectedSheets) {
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: entry.sheet_id,
+      range: `${entry.sheet_name}!A:Z`
+    });
+
+    const rows = result.data.values;
+    if (!rows || rows.length < 2) continue;
+
+    const headers = rows[0];
+    const searchColIdx = headers.indexOf(searchColumn);
+    if (searchColIdx === -1) continue;
+
+    // Validate all update columns exist
+    const invalidCols = Object.keys(updates).filter(col => !headers.includes(col));
+    if (invalidCols.length > 0) {
+      return `Column(s) not found: ${invalidCols.join(', ')}. Available columns: ${headers.join(', ')}`;
+    }
+
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][searchColIdx] && rows[i][searchColIdx].includes(searchValue)) {
+        // Found the row — update each field
+        const updated = [];
+        for (const [col, val] of Object.entries(updates)) {
+          const colIdx = headers.indexOf(col);
+          const colLetter = String.fromCharCode(65 + colIdx);
+          const cellRange = `${entry.sheet_name}!${colLetter}${i + 1}`;
+
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: entry.sheet_id,
+            range: cellRange,
+            valueInputOption: 'RAW',
+            requestBody: { values: [[val]] }
+          });
+
+          console.log(`[Sheet] Updated ${cellRange} = "${val}" in "${entry.name}"`);
+          updated.push(`${col}: "${val}"`);
+        }
+
+        return `Updated ${updated.join(', ')} for row where ${searchColumn} = "${searchValue}" in sheet "${entry.name}"`;
+      }
+    }
+  }
+
+  return `No row found where ${searchColumn} contains "${searchValue}"`;
+}
+
+// Add a new row to the first connected sheet
+async function addSheetRow(rowData) {
+  const sheets = await getSheets();
+  const connectedSheets = await getConnectedSheets();
+
+  if (connectedSheets.length === 0) return 'No sheets connected. Please connect a Google Sheet first.';
+
+  const entry = connectedSheets[0];
+  const headers = entry.headers;
+
+  // Build row values in correct column order
+  const rowValues = headers.map(h => rowData[h] || '');
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: entry.sheet_id,
+    range: `${entry.sheet_name}!A:Z`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [rowValues] }
+  });
+
+  console.log(`[Sheet] Added new row to "${entry.name}"`);
+  return `Added new row to sheet "${entry.name}": ${headers.map((h, i) => `${h}: ${rowValues[i] || '(empty)'}`).join(', ')}`;
+}
+
 module.exports = {
   connectSheet, disconnectSheet, getConnectedSheets,
   searchSheetByCustomer, searchSheetByMBL, searchSheetByStatus,
-  getAllShipments, formatRows, previewSheet
+  getAllShipments, formatRows, previewSheet,
+  updateSheetRow, addSheetRow
 };

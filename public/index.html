@@ -1051,6 +1051,22 @@ body::before {
 .send-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.stop-btn {
+  width: 42px; height: 42px;
+  border: none;
+  border-radius: 10px;
+  background: #f87171;
+  color: white;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  animation: fadeIn 0.2s ease;
+}
+.stop-btn:hover { background: #ef4444; transform: scale(1.05); }
+.stop-btn:active { transform: scale(0.94);
   transform: none;
   box-shadow: none;
 }
@@ -1333,6 +1349,11 @@ body::before {
               <polygon points="22 2 15 22 11 13 2 9 22 2"/>
             </svg>
           </button>
+          <button class="stop-btn" id="stopBtn" title="Stop generating" style="display:none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -1366,6 +1387,9 @@ const hamburgerBtn   = document.getElementById('hamburgerBtn');
 let documents = [];
 let isAsking  = false;
 let sidebarOpen = false;
+let abortController = null;
+let lastQuestion = '';
+const stopBtn = document.getElementById('stopBtn');
 
 // ===== Markdown setup =====
 marked.setOptions({
@@ -1564,28 +1588,28 @@ async function sendMessage() {
   const text = chatInput.value.trim();
   if (!text || isAsking) return;
 
-  // Close sidebar on mobile when sending
   closeSidebar();
-
-  // Hide welcome
   if (welcomeEl) welcomeEl.style.display = 'none';
 
-  // Add user message
+  lastQuestion = text;
   appendMessage('user', text);
   chatInput.value = '';
   chatInput.style.height = 'auto';
 
-  // Show typing indicator
   const typingEl = showTyping();
 
   isAsking = true;
-  sendBtn.disabled = true;
+  sendBtn.style.display = 'none';
+  stopBtn.style.display = 'flex';
+
+  abortController = new AbortController();
 
   try {
     const resp = await fetch(`${API_BASE}/ask`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: text })
+      body: JSON.stringify({ question: text }),
+      signal: abortController.signal
     });
 
     removeTyping(typingEl);
@@ -1600,13 +1624,28 @@ async function sendMessage() {
 
   } catch (err) {
     removeTyping(typingEl);
-    appendMessage('ai', `**Error:** ${err.message}`);
+    if (err.name === 'AbortError') {
+      // User stopped — remove the user message bubble and put text back in input
+      const allMsgs = messagesEl.querySelectorAll('.msg');
+      const lastUserMsg = [...allMsgs].reverse().find(m => m.classList.contains('user'));
+      if (lastUserMsg) lastUserMsg.remove();
+      chatInput.value = lastQuestion;
+      chatInput.focus();
+    } else {
+      appendMessage('ai', `**Error:** ${err.message}`);
+    }
   } finally {
     isAsking = false;
-    sendBtn.disabled = false;
+    abortController = null;
+    sendBtn.style.display = 'flex';
+    stopBtn.style.display = 'none';
     chatInput.focus();
   }
 }
+
+stopBtn.addEventListener('click', () => {
+  if (abortController) abortController.abort();
+});
 
 function appendMessage(role, content, cost, provider) {
   const msg = document.createElement('div');
